@@ -39,24 +39,19 @@ function configure_systemd() {
 [Unit]
 Description=$COIN_NAME service
 After=network.target
-
 [Service]
 User=root
 Group=root
-
 Type=forking
 #PIDFile=$CONFIGFOLDER/$COIN_NAME.pid
-
 ExecStart=$COIN_PATH$COIN_DAEMON -daemon -conf=$CONFIGFOLDER/$CONFIG_FILE -datadir=$CONFIGFOLDER
 ExecStop=-$COIN_PATH$COIN_CLI -conf=$CONFIGFOLDER/$CONFIG_FILE -datadir=$CONFIGFOLDER stop
-
 Restart=always
 PrivateTmp=true
 TimeoutStopSec=60s
 TimeoutStartSec=10s
 StartLimitInterval=120s
 StartLimitBurst=5
-
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -132,11 +127,6 @@ addnode=149.28.132.154:33250
 addnode=45.77.50.235:36236
 addnode=149.28.167.36:3300
 addnode=45.76.126.88:3300
-addnode=80.211.53.221:3300
-addnode=212.237.14.153:3300
-addnode=80.211.2.81:3300
-addnode=94.177.201.112:3300
-addnode=80.211.134.178:3300
 EOF
 }
 
