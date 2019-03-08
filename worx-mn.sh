@@ -6,41 +6,68 @@ CONFIGFOLDER='/root/.worx'
 COIN_DAEMON='worxd'
 COIN_CLI='worx-cli'
 COIN_PATH='/usr/local/bin/'
-COIN_TGZ='https://github.com/mrgrow2k/Worx/releases/download/1.4.0/Worx-1.4.0-64bit-Linux.tar.gz'
+COIN_TGZ='https://github.com/mrgrow2k/Worx/releases/download/1.4.0/Worx-1.4.0-64bit-Linux.zip'
 COIN_ZIP=$(echo $COIN_TGZ | awk -F'/' '{print $NF}')
 COIN_NAME='worx'
+COIN_EXPLORER='http://blocks.worxcoin.io'
 COIN_PORT=3300
 RPC_PORT=31313
-COIN_BLOCKS='https://github.com/mrgrow2k/Worx/releases/download/1.4.0/bootstrap.zip'
 
 NODEIP=$(curl -s4 icanhazip.com)
 
-
+BLUE="\033[0;34m"
+YELLOW="\033[0;33m"
+CYAN="\033[0;36m" 
+PURPLE="\033[0;35m"
 RED='\033[0;31m'
-GREEN='\033[0;32m'
+GREEN="\033[0;32m"
 NC='\033[0m'
+MAG='\e[1;35m'
 
-function sync_node() {
-  echo -e "Syncing the node. This might take a while, depending on your internet connection!"
-  cd $CONFIGFOLDER >/dev/null 2>&1
-  rm -r {blocks,database,fee_estimates.dat,mnpayments.dat,worxd.pid,budget.dat,db.log,peers.dat,chainstate,debug.log,mncache.dat} >/dev/null 2>&1
-  wget -q $COIN_BLOCKS -O bootstrap.zip
-  unzip -q bootstrap.zip >/dev/null 2>&1
-  rm bootstrap.zip >/dev/null 2>&1
-  cd - >/dev/null 2>&1
+purgeOldInstallation() {
+    echo -e "${GREEN}Searching and removing old $COIN_NAME files and configurations${NC}"
+    #kill wallet daemon
+	sudo killall $COIN_DAEMON > /dev/null 2>&1
+    #remove old ufw port allow
+    sudo ufw delete allow $COIN_PORT/tcp > /dev/null 2>&1
+    #remove old files
+    sudo rm $COIN_CLI $COIN_DAEMON > /dev/null 2>&1
+    sudo rm -rf ~/.$COIN_NAME > /dev/null 2>&1
+    #remove binaries and $COIN_NAME utilities
+    cd /usr/local/bin && sudo rm $COIN_CLI $COIN_DAEMON > /dev/null 2>&1 && cd
+    echo -e "${GREEN}* Done${NONE}";
+}
+
+function install_sentinel() {
+  echo -e "${GREEN}Installing sentinel.${NC}"
+  apt-get -y install python-virtualenv virtualenv >/dev/null 2>&1
+  git clone $SENTINEL_REPO $CONFIGFOLDER/sentinel >/dev/null 2>&1
+  cd $CONFIGFOLDER/sentinel
+  virtualenv ./venv >/dev/null 2>&1
+  ./venv/bin/pip install -r requirements.txt >/dev/null 2>&1
+  echo  "* * * * * cd $CONFIGFOLDER/sentinel && ./venv/bin/python bin/sentinel.py >> $CONFIGFOLDER/sentinel.log 2>&1" > $CONFIGFOLDER/$COIN_NAME.cron
+  crontab $CONFIGFOLDER/$COIN_NAME.cron
+  rm $CONFIGFOLDER/$COIN_NAME.cron >/dev/null 2>&1
 }
 
 function download_node() {
-  echo -e "Preparing to download ${GREEN}$COIN_NAME${NC}."
+  echo -e "${GREEN}Downloading and Installing VPS $COIN_NAME Daemon${NC}"
   cd $TMP_FOLDER >/dev/null 2>&1
   wget -q $COIN_TGZ
   compile_error
-  tar xvzf $COIN_ZIP -C $COIN_PATH >/dev/null 2>&1
-  cd - >/dev/null 2>&1
+  unzip $COIN_ZIP >/dev/null 2>&1
+  compile_error
+  cd linux
+  chmod +x $COIN_DAEMON
+  chmod +x $COIN_CLI
+  cp $COIN_DAEMON $COIN_PATH
+  cp $COIN_DAEMON /root/
+  cp $COIN_CLI $COIN_PATH
+  cp $COIN_CLI /root/
+  cd ~ >/dev/null 2>&1
   rm -rf $TMP_FOLDER >/dev/null 2>&1
   clear
 }
-
 
 function configure_systemd() {
   cat << EOF > /etc/systemd/system/$COIN_NAME.service
@@ -52,7 +79,7 @@ User=root
 Group=root
 Type=forking
 #PIDFile=$CONFIGFOLDER/$COIN_NAME.pid
-ExecStart=$COIN_PATH$COIN_DAEMON -daemon -prune=100 -conf=$CONFIGFOLDER/$CONFIG_FILE -datadir=$CONFIGFOLDER
+ExecStart=$COIN_PATH$COIN_DAEMON -daemon -conf=$CONFIGFOLDER/$CONFIG_FILE -datadir=$CONFIGFOLDER
 ExecStop=-$COIN_PATH$COIN_CLI -conf=$CONFIGFOLDER/$CONFIG_FILE -datadir=$CONFIGFOLDER stop
 Restart=always
 PrivateTmp=true
@@ -88,16 +115,15 @@ rpcuser=$RPCUSER
 rpcpassword=$RPCPASSWORD
 rpcport=$RPC_PORT
 rpcallowip=127.0.0.1
+port=$COIN_PORT
 listen=1
 server=1
-debug=0
 daemon=1
-port=$COIN_PORT
 EOF
 }
 
 function create_key() {
-  echo -e "Enter your ${RED}$COIN_NAME Masternode Private Key${NC}. Leave it blank to generate a new ${RED}Masternode Private Key${NC} for you:"
+  echo -e "${YELLOW}Enter your ${RED}$COIN_NAME Masternode GEN Key${NC}. Or Press enter generate New Genkey"
   read -e COINKEY
   if [[ -z "$COINKEY" ]]; then
   $COIN_PATH$COIN_DAEMON -daemon
@@ -109,7 +135,7 @@ function create_key() {
   COINKEY=$($COIN_PATH$COIN_CLI masternode genkey)
   if [ "$?" -gt "0" ];
     then
-    echo -e "${RED}Wallet not fully loaded. Let us wait and try again to generate the Private Key${NC}"
+    echo -e "${RED}Wallet not fully loaded. Let us wait and try again to generate the GEN Key${NC}"
     sleep 30
     COINKEY=$($COIN_PATH$COIN_CLI masternode genkey)
   fi
@@ -119,16 +145,11 @@ clear
 }
 
 function update_config() {
-  sed -i 's/daemon=1/daemon=0/' $CONFIGFOLDER/$CONFIG_FILE
   cat << EOF >> $CONFIGFOLDER/$CONFIG_FILE
-logintimestamps=1
-maxconnections=64
-#bind=$NODEIP
+maxconnections=256
 masternode=1
-externalip=$NODEIP:$COIN_PORT
+masternodeaddr=$NODEIP:$COIN_PORT
 masternodeprivkey=$COINKEY
-printtodebug=0
-printtoconsole=0
 EOF
 }
 
@@ -178,7 +199,7 @@ fi
 
 function checks() {
 if [[ $(lsb_release -d) != *16.04* ]]; then
-  echo -e "${RED}You are not running Ubuntu 14.04. Installation is cancelled.${NC}"
+  echo -e "${RED}You are not running Ubuntu 16.04. Installation is cancelled.${NC}"
   exit 1
 fi
 
@@ -188,25 +209,26 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 if [ -n "$(pidof $COIN_DAEMON)" ] || [ -e "$COIN_DAEMOM" ] ; then
-  echo -e "${RED}$COIN_NAME is already installed.${NC}"
+  echo -e "${RED}$COIN_NAME is already installed.${NC} Please Run again.."
   exit 1
 fi
 }
 
 function prepare_system() {
-echo -e "Prepare the system to install ${GREEN}$COIN_NAME${NC} master node."
+echo -e "Preparing the VPS to setup. ${CYAN}$COIN_NAME${NC} ${RED}Masternode${NC}"
 apt-get update >/dev/null 2>&1
 DEBIAN_FRONTEND=noninteractive apt-get update > /dev/null 2>&1
 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" -y -qq upgrade >/dev/null 2>&1
 apt install -y software-properties-common >/dev/null 2>&1
-echo -e "${GREEN}Adding bitcoin PPA repository"
+echo -e "${PURPLE}Adding bitcoin PPA repository"
 apt-add-repository -y ppa:bitcoin/bitcoin >/dev/null 2>&1
 echo -e "Installing required packages, it may take some time to finish.${NC}"
 apt-get update >/dev/null 2>&1
+apt-get install libzmq3-dev -y >/dev/null 2>&1
 apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" make software-properties-common \
 build-essential libtool autoconf libssl-dev libboost-dev libboost-chrono-dev libboost-filesystem-dev libboost-program-options-dev \
-libboost-system-dev libboost-test-dev libboost-thread-dev sudo automake git wget curl unzip libdb4.8-dev bsdmainutils libdb4.8++-dev \
-libminiupnpc-dev libgmp3-dev ufw pkg-config libzmq3-dev libevent-dev >/dev/null 2>&1
+libboost-system-dev libboost-test-dev libboost-thread-dev sudo automake git wget curl libdb4.8-dev bsdmainutils libdb4.8++-dev \
+libminiupnpc-dev libgmp3-dev ufw pkg-config libevent-dev  libdb5.3++ unzip libzmq5 >/dev/null 2>&1
 if [ "$?" -gt "0" ];
   then
     echo -e "${RED}Not all required packages were installed properly. Try to install them manually by running the following commands:${NC}\n"
@@ -215,37 +237,42 @@ if [ "$?" -gt "0" ];
     echo "apt-add-repository -y ppa:bitcoin/bitcoin"
     echo "apt-get update"
     echo "apt install -y make build-essential libtool software-properties-common autoconf libssl-dev libboost-dev libboost-chrono-dev libboost-filesystem-dev \
-libboost-program-options-dev libboost-system-dev libboost-test-dev libboost-thread-dev sudo automake git curl unzip libdb4.8-dev \
-bsdmainutils libdb4.8++-dev libminiupnpc-dev libgmp3-dev ufw pkg-config libzmq3-dev libevent-dev"
+libboost-program-options-dev libboost-system-dev libboost-test-dev libboost-thread-dev sudo automake git curl libdb4.8-dev \
+bsdmainutils libdb4.8++-dev libminiupnpc-dev libgmp3-dev ufw pkg-config libevent-dev libdb5.3++ unzip libzmq5"
  exit 1
 fi
 clear
 }
 
 function important_information() {
-  echo -e "================================================================================================================================"
-  echo -e "$COIN_NAME Masternode is up and running listening on port ${RED}$COIN_PORT${NC}."
-  echo -e "Configuration file is: ${RED}$CONFIGFOLDER/$CONFIG_FILE${NC}"
-  echo -e "Start: ${RED}systemctl start $COIN_NAME.service${NC}"
-  echo -e "Stop: ${RED}systemctl stop $COIN_NAME.service${NC}"
-  echo -e "VPS_IP:PORT ${RED}$NODEIP:$COIN_PORT${NC}"
-  echo -e "MASTERNODE PRIVATEKEY is: ${RED}$COINKEY${NC}"
-  echo -e "Please check ${RED}$COIN_NAME${NC} daemon is running with the following command: ${RED}systemctl status $COIN_NAME.service${NC}"
-  echo -e "Use ${RED}$COIN_CLI masternode status${NC} to check your MN."
-  if [[ -n $SENTINEL_REPO  ]]; then
-  echo -e "${RED}Sentinel${NC} is installed in ${RED}$CONFIGFOLDER/sentinel${NC}"
-  echo -e "Sentinel logs is: ${RED}$CONFIGFOLDER/sentinel.log${NC}"
-  fi
-  echo -e "================================================================================================================================"
+ echo
+ echo -e "${CYAN}=======================================================================================${NC}"
+ echo -e "$COIN_NAME Masternode is up and running listening on port ${GREEN}$COIN_PORT${NC}."
+ echo -e "Configuration file is: ${RED}$CONFIGFOLDER/$CONFIG_FILE${NC}"
+ echo -e "Start: ${RED}systemctl start $COIN_NAME.service${NC}"
+ echo -e "Stop: ${RED}systemctl stop $COIN_NAME.service${NC}"
+ echo -e "Check Status: ${RED}systemctl status $COIN_NAME.service${NC}"
+ echo -e "VPS_IP:PORT ${GREEN}$NODEIP:$COIN_PORT${NC}"
+ echo -e "MASTERNODE GENKEY is: ${YELLOW}$COINKEY${NC}"
+ echo -e "Check ${RED}$COIN_CLI getblockcount${NC} and compare to ${GREEN}$COIN_EXPLORER${NC}."
+ echo -e "Confirm ${GREEN}Collateral${NC} is fully confirmed and start Masternode."
+ echo -e "Use ${RED}$COIN_CLI masternode status${NC} to check your MN Status."
+ echo -e "Use ${RED}$COIN_CLI help${NC} for help."
+ echo -e "${YELLOW}=====================================================================================${NC}"
+ if [[ -n $SENTINEL_REPO  ]]; then
+ echo -e "${RED}Sentinel${NC} is installed in ${RED}/root/sentinel_$COIN_NAME${NC}"
+ echo -e "Sentinel logs is: ${RED}$CONFIGFOLDER/sentinel.log${NC}"
+ echo -e "${CYAN}=======================================================================================${NC}"
+ fi
 }
 
 function setup_node() {
   get_ip
   create_config
-  sync_node
   create_key
   update_config
   enable_firewall
+  #install_sentinel
   important_information
   configure_systemd
 }
@@ -254,6 +281,7 @@ function setup_node() {
 ##### Main #####
 clear
 
+purgeOldInstallation
 checks
 prepare_system
 download_node
