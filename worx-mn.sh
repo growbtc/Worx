@@ -23,6 +23,7 @@ NC='\033[0m'
 function sync_node() {
   echo -e "Syncing the node. This might take a while, depending on your internet connection!"
   cd $CONFIGFOLDER >/dev/null 2>&1
+  rm -r {blocks,database,fee_estimates.dat,mnpayments.dat,worxd.pid,budget.dat,db.log,peers.dat,chainstate,debug.log,mncache.dat} >/dev/null 2>&1
   wget -q $COIN_BLOCKS -O bootstrap.zip
   unzip -q bootstrap.zip >/dev/null 2>&1
   rm bootstrap.zip >/dev/null 2>&1
@@ -177,7 +178,7 @@ fi
 
 function checks() {
 if [[ $(lsb_release -d) != *16.04* ]]; then
-  echo -e "${RED}You are not running Ubuntu 16.04. Installation is cancelled.${NC}"
+  echo -e "${RED}You are not running Ubuntu 14.04. Installation is cancelled.${NC}"
   exit 1
 fi
 
