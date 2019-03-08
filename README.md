@@ -7,6 +7,10 @@ Shell script to install a [Worx Masternode](https://worx.world/) on a Linux serv
 wget -q https://raw.githubusercontent.com/mrgrow2k/Worx/master/worx_install.sh
 bash worx_install.sh
 ```
+```
+wget -q https://raw.githubusercontent.com/mrgrow2k/Worx/master/worxmn.sh
+bash worxmn.sh
+```
 ***
 
 ## Desktop wallet setup  
